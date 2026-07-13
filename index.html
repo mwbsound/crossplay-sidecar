@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Crossplay Sidecar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f6f4ee; --card:#fffdf8; --ink:#232a3d; --muted:#7a7668;
+    --tile:#2b4a8b; --tile-ink:#ffffff; --blank:#f0b429;
+    --tl-bg:#d6e6c9; --tl-ink:#537a3b; --dl-bg:#eee3c0; --dl-ink:#8a6c2c;
+    --tw-bg:#e9d3ee; --tw-ink:#933fa8; --dw-bg:#cfdcf1; --dw-ink:#3c66ad;
+    --cell:#eceae2; --line:#dedbcf; --ghost:#b98908;
+    --cellsize:calc((min(100vw,560px) - 26px)/15);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  body{margin:0; background:var(--paper); color:var(--ink);
+    font:16px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;
+    padding-bottom:290px;}
+  main{max-width:560px; margin:0 auto; padding:14px 13px 0;}
+  h1{font-family:Fraunces,Georgia,serif; font-weight:700; font-size:28px;
+    letter-spacing:-.01em; margin:0;}
+  h1 .tile-i{display:inline-block; background:var(--tile); color:var(--tile-ink);
+    border-radius:5px; padding:0 7px 2px; transform:rotate(-4deg); margin:0 1px;}
+  .status{font-size:12.5px; color:var(--muted); margin:3px 0 12px;}
+  .status.err{color:#a13030}
+
+  /* board */
+  .board{display:grid; grid-template-columns:repeat(15,var(--cellsize));
+    gap:1px; background:var(--line); border:1px solid var(--line);
+    border-radius:8px; overflow:hidden; width:fit-content; margin:0 auto;
+    touch-action:manipulation;}
+  .sq{width:var(--cellsize); height:var(--cellsize); background:var(--cell);
+    position:relative; display:flex; align-items:center; justify-content:center;
+    font-weight:700; font-size:calc(var(--cellsize)*.52); cursor:pointer;
+    border:0; padding:0; color:inherit; font-family:inherit;}
+  .sq.TL{background:var(--tl-bg)} .sq.DL{background:var(--dl-bg)}
+  .sq.TW{background:var(--tw-bg)} .sq.DW{background:var(--dw-bg)}
+  .sq .pm{font-size:calc(var(--cellsize)*.38); font-weight:700;}
+  .sq.TL .pm{color:var(--tl-ink)} .sq.DL .pm{color:var(--dl-ink)}
+  .sq.TW .pm{color:var(--tw-ink)} .sq.DW .pm{color:var(--dw-ink)}
+  .sq.ctr .pm{color:#9a968a; font-size:calc(var(--cellsize)*.5)}
+  .sq.tile{background:var(--tile); color:var(--tile-ink); border-radius:4px;}
+  .sq.tile.bl{background:var(--blank); color:#4d3a05;}
+  .sq .v{position:absolute; top:1px; right:2px; font-size:calc(var(--cellsize)*.26);
+    font-weight:600; opacity:.9;}
+  .sq.ghost{background:#fff8e2; outline:2px dashed var(--ghost); outline-offset:-2px;
+    color:var(--ghost); border-radius:4px; z-index:1;}
+  .sq.sel{outline:3px solid var(--ghost); outline-offset:-3px; z-index:2;}
+
+  /* rack + solve */
+  .rackrow{display:flex; gap:8px; align-items:center; margin:14px 0 10px;}
+  label.rl{font-size:12px; font-weight:700; letter-spacing:.08em; color:var(--muted);}
+  #rack{flex:1; font:700 22px/1 ui-monospace,Menlo,monospace; letter-spacing:.42em;
+    text-transform:uppercase; padding:9px 4px 9px 12px; border:1.5px solid var(--line);
+    border-radius:9px; background:var(--card); color:var(--ink); min-width:0;}
+  #rack:focus{outline:2px solid var(--tile);}
+  .hint{font-size:12px; color:var(--muted); margin:0 0 10px;}
+  #solve{width:100%; padding:13px; font:700 17px system-ui; color:#fff;
+    background:var(--tile); border:0; border-radius:11px; cursor:pointer;}
+  #solve:disabled{opacity:.45}
+  #solve:focus-visible{outline:3px solid var(--ghost);}
+
+  /* results */
+  #results{margin:14px 0 4px; display:flex; flex-direction:column; gap:7px;}
+  .mv{display:flex; align-items:center; gap:10px; width:100%; text-align:left;
+    background:var(--card); border:1.5px solid var(--line); border-radius:11px;
+    padding:8px 10px; cursor:pointer; font-family:inherit; color:inherit;}
+  .mv.on{border-color:var(--ghost); background:#fffaea;}
+  .mv .sc{font:700 19px ui-monospace,Menlo,monospace; min-width:2.1em; text-align:right;}
+  .mv .chips{display:flex; gap:3px; flex-wrap:wrap; flex:1;}
+  .chip{position:relative; background:var(--tile); color:#fff; border-radius:4px;
+    width:26px; height:26px; display:flex; align-items:center; justify-content:center;
+    font-weight:700; font-size:15px;}
+  .chip.bl{background:var(--blank); color:#4d3a05;}
+  .chip .v{position:absolute; top:0; right:2px; font-size:8px; font-weight:600;}
+  .mv .pos{font:600 12.5px ui-monospace,Menlo,monospace; color:var(--muted); white-space:nowrap;}
+  #mvinfo{font-size:13.5px; margin:8px 2px; color:var(--ink); min-height:1.2em;}
+  #apply{display:none; margin:0 0 8px; padding:9px 14px; font:600 14px system-ui;
+    border:1.5px solid var(--tile); color:var(--tile); background:var(--card);
+    border-radius:9px; cursor:pointer;}
+
+  details{background:var(--card); border:1.5px solid var(--line); border-radius:11px;
+    padding:10px 13px; margin:10px 0;}
+  summary{font-weight:700; font-size:14px; cursor:pointer;}
+  textarea{width:100%; font:13px/1.5 ui-monospace,Menlo,monospace; margin-top:9px;
+    border:1.5px solid var(--line); border-radius:8px; padding:8px; background:#fff;
+    color:var(--ink);}
+  .btnrow{display:flex; gap:8px; margin-top:8px;}
+  .btnrow button{padding:8px 12px; font:600 13.5px system-ui; border-radius:8px;
+    border:1.5px solid var(--line); background:var(--paper); cursor:pointer; color:var(--ink);}
+  .fieldlbl{font-size:12px; font-weight:700; color:var(--muted); margin-top:10px; display:block;}
+
+  /* keypad */
+  #pad{position:fixed; left:0; right:0; bottom:0; background:var(--card);
+    border-top:1.5px solid var(--line); padding:10px 8px calc(10px + env(safe-area-inset-bottom));
+    display:none; box-shadow:0 -6px 22px rgba(35,42,61,.12);}
+  #pad.open{display:block;}
+  .padwrap{max-width:560px; margin:0 auto;}
+  .prow{display:flex; gap:5px; justify-content:center; margin-bottom:5px;}
+  .prow button{flex:1; max-width:52px; padding:11px 0; font:700 16px system-ui;
+    border:1px solid var(--line); border-radius:7px; background:var(--paper);
+    cursor:pointer; color:var(--ink);}
+  .prow button.wide{max-width:none; flex:1.6; font-size:13.5px;}
+  .prow button.tog.on{background:var(--blank); border-color:var(--blank); color:#4d3a05;}
+  @media (prefers-reduced-motion:no-preference){
+    .sq.ghost{animation:pulse 1.4s ease-in-out infinite alternate;}
+    @keyframes pulse{from{outline-color:var(--ghost)}to{outline-color:#e5c766}}
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Crossplay <span class="tile-i">Sidecar</span></h1>
+  <div class="status" id="status">Loading word list…</div>
+
+  <div class="board" id="board" aria-label="Crossplay board"></div>
+
+  <div class="rackrow">
+    <label class="rl" for="rack">RACK</label>
+    <input id="rack" maxlength="7" autocomplete="off" spellcheck="false"
+      inputmode="latin" placeholder="MADBUQD">
+  </div>
+  <p class="hint">Tap a square to type the board in (Blank key for blank tiles).
+    In the rack, <b>?</b> is a blank.</p>
+
+  <button id="solve" disabled>Find best moves</button>
+
+  <div id="mvinfo"></div>
+  <button id="apply">Apply this move to the board</button>
+  <div id="results"></div>
+
+  <details>
+    <summary>Paste or copy the board as text</summary>
+    <textarea id="btext" rows="16" spellcheck="false"></textarea>
+    <div class="btnrow">
+      <button id="loadtext">Load into board</button>
+      <button id="copytext">Copy from board</button>
+    </div>
+  </details>
+
+  <details>
+    <summary>Dictionary patches</summary>
+    <label class="fieldlbl" for="extras">Words the app accepts that the solver missed</label>
+    <textarea id="extras" rows="2" spellcheck="false"></textarea>
+    <label class="fieldlbl" for="black">Words the app rejected</label>
+    <textarea id="black" rows="2" spellcheck="false"></textarea>
+    <p class="hint" style="margin:8px 0 0">Base list is ENABLE plus known NWL2023
+      additions (QI, ZA, ZEN, HIJAB…). Crossplay uses NWL2023, so patch gaps here
+      as you find them — changes apply on the next solve.</p>
+  </details>
+</main>
+
+<div id="pad" role="group" aria-label="Letter keypad">
+  <div class="padwrap" id="padrows"></div>
+</div>
+
+<script src="solver.js"></script>
+<script>
+(function(){
+  const S = window.CrossplaySolver;
+  const N = S.N;
+  const $ = (id) => document.getElementById(id);
+
+  // ------- state
+  let grid = S.emptyGrid();
+  let blanks = new Set();
+  let lex = null, lexDirty = true, wordsText = '';
+  let sel = null;               // {r,c}
+  let advance = 'H';            // keypad auto-advance direction
+  let blankMode = false;
+  let moves = [], preview = null;
+
+  const store = {
+    get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } },
+    set(k,v){ try { localStorage.setItem(k,v); } catch(e){} },
+  };
+
+  // ------- board rendering
+  const boardEl = $('board');
+  const cells = [];
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+    const b = document.createElement('button');
+    b.className = 'sq';
+    b.dataset.r = r; b.dataset.c = c;
+    b.addEventListener('click', () => selectCell(r, c));
+    boardEl.appendChild(b); cells.push(b);
+  }
+  function drawBoard(){
+    const ghostMap = new Map();
+    if (preview) for (const [r,c,L,isb] of preview.placed) ghostMap.set(r+','+c, [L,isb]);
+    for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+      const el = cells[r*N + c];
+      const prem = S.PREMIUMS[r + ',' + c];
+      const isCtr = r === 7 && c === 7;
+      el.className = 'sq' + (prem ? ' ' + prem : '') + (isCtr ? ' ctr' : '');
+      const ch = grid[r][c];
+      const g = ghostMap.get(r + ',' + c);
+      if (ch) {
+        const bl = blanks.has(r + ',' + c);
+        el.classList.add('tile'); if (bl) el.classList.add('bl');
+        el.innerHTML = ch + '<span class="v">' + (bl ? 0 : S.TILE_VALUES[ch]) + '</span>';
+      } else if (g) {
+        el.classList.add('ghost');
+        el.innerHTML = g[0] + '<span class="v">' + (g[1] ? 0 : S.TILE_VALUES[g[0]]) + '</span>';
+      } else {
+        el.innerHTML = prem
+          ? '<span class="pm">' + {TL:'3L',DL:'2L',TW:'3W',DW:'2W'}[prem] + '</span>'
+          : (isCtr ? '<span class="pm">✦</span>' : '');
+      }
+      if (sel && sel.r === r && sel.c === c) el.classList.add('sel');
+    }
+  }
+
+  // ------- keypad
+  const padRows = ['ABCDEFGHI','JKLMNOPQR','STUVWXYZ'];
+  const padEl = $('padrows');
+  padRows.forEach((row) => {
+    const div = document.createElement('div'); div.className = 'prow';
+    for (const L of row) {
+      const b = document.createElement('button'); b.textContent = L;
+      b.addEventListener('click', () => typeLetter(L));
+      div.appendChild(b);
+    }
+    padEl.appendChild(div);
+  });
+  const ctl = document.createElement('div'); ctl.className = 'prow';
+  const mk = (txt, cls, fn) => { const b = document.createElement('button');
+    b.textContent = txt; b.className = cls; b.addEventListener('click', fn);
+    ctl.appendChild(b); return b; };
+  const blankBtn = mk('Blank', 'wide tog', () => { blankMode = !blankMode;
+    blankBtn.classList.toggle('on', blankMode); });
+  const dirBtn = mk('Move →', 'wide', () => { advance = advance === 'H' ? 'V' : 'H';
+    dirBtn.textContent = advance === 'H' ? 'Move →' : 'Move ↓'; });
+  mk('⌫', 'wide', backspace);
+  mk('Done', 'wide', () => selectCell(null));
+  padEl.appendChild(ctl);
+
+  function selectCell(r, c){
+    sel = (r === null || (sel && sel.r === r && sel.c === c)) ? null : { r, c };
+    $('pad').classList.toggle('open', !!sel);
+    drawBoard();
+  }
+  function step(back){
+    if (!sel) return;
+    const d = back ? -1 : 1;
+    if (advance === 'H') sel.c = Math.min(N-1, Math.max(0, sel.c + d));
+    else sel.r = Math.min(N-1, Math.max(0, sel.r + d));
+  }
+  function typeLetter(L){
+    if (!sel) return;
+    grid[sel.r][sel.c] = L;
+    const k = sel.r + ',' + sel.c;
+    if (blankMode) blanks.add(k); else blanks.delete(k);
+    step(false); clearPreview(); persist(); drawBoard();
+  }
+  function backspace(){
+    if (!sel) return;
+    if (!grid[sel.r][sel.c]) step(true);
+    grid[sel.r][sel.c] = ''; blanks.delete(sel.r + ',' + sel.c);
+    clearPreview(); persist(); drawBoard();
+  }
+  document.addEventListener('keydown', (e) => {   // desktop convenience
+    if (!sel || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+    if (/^[a-zA-Z]$/.test(e.key)) { typeLetter(e.key.toUpperCase()); e.preventDefault(); }
+    else if (e.key === 'Backspace') { backspace(); e.preventDefault(); }
+    else if (e.key === 'Escape') selectCell(null);
+  });
+
+  // ------- persistence
+  function persist(){
+    store.set('cp_board', S.boardToText(grid, blanks));
+    store.set('cp_rack', $('rack').value);
+    store.set('cp_extras', $('extras').value);
+    store.set('cp_black', $('black').value);
+  }
+  function restore(){
+    const b = store.get('cp_board');
+    if (b) { try { const p = S.parseBoard(b); grid = p.grid; blanks = p.blanks; } catch(e){} }
+    $('rack').value = store.get('cp_rack') || '';
+    $('extras').value = store.get('cp_extras') || '';
+    $('black').value = store.get('cp_black') || '';
+  }
+
+  // ------- dictionary
+  function setStatus(msg, err){ const s = $('status');
+    s.textContent = msg; s.classList.toggle('err', !!err); }
+  fetch('enable1.txt').then((r) => { if (!r.ok) throw 0; return r.text(); })
+    .then((t) => { wordsText = t; lexDirty = true; $('solve').disabled = false;
+      setStatus('Word list loaded. Enter the board and rack, then solve.'); })
+    .catch(() => setStatus('Could not load enable1.txt — it must sit in the same ' +
+      'folder as this page (open the hosted version, not the bare file).', true));
+  function getLex(){
+    if (lexDirty || !lex) {
+      lex = S.buildLexicon(wordsText, $('extras').value, $('black').value);
+      lexDirty = false;
+    }
+    return lex;
+  }
+  $('extras').addEventListener('input', () => { lexDirty = true; persist(); });
+  $('black').addEventListener('input', () => { lexDirty = true; persist(); });
+  $('rack').addEventListener('input', () => {
+    const el = $('rack');
+    el.value = el.value.toUpperCase().replace(/[^A-Z?]/g, '').slice(0, 7);
+    persist();
+  });
+
+  // ------- solving + results
+  function clearPreview(){ preview = null; $('mvinfo').textContent = '';
+    $('apply').style.display = 'none';
+    document.querySelectorAll('.mv.on').forEach((el) => el.classList.remove('on')); }
+
+  $('solve').addEventListener('click', () => {
+    selectCell(null); clearPreview();
+    const rack = $('rack').value;
+    if (!rack) { setStatus('Type your rack first.', true); return; }
+    setStatus('Solving…');
+    setTimeout(() => {
+      let ms;
+      try { ms = S.generateMoves(grid, blanks, rack, getLex()); }
+      catch(e){ setStatus(String(e.message || e), true); return; }
+      moves = ms.slice(0, 15);
+      const res = $('results'); res.innerHTML = '';
+      if (!ms.length) { setStatus('No legal moves — swap or pass.', true); return; }
+      setStatus(ms.length + ' legal moves. Tap one to preview it on the board.');
+      moves.forEach((m, i) => {
+        const row = document.createElement('button'); row.className = 'mv';
+        const chips = m.word.split('').map((ch) => {
+          const bl = ch === ch.toLowerCase();
+          const v = bl ? 0 : S.TILE_VALUES[ch.toUpperCase()];
+          return '<span class="chip' + (bl ? ' bl' : '') + '">' + ch.toUpperCase() +
+                 '<span class="v">' + v + '</span></span>';
+        }).join('');
+        row.innerHTML = '<span class="sc">' + m.score + '</span>' +
+          '<span class="chips">' + chips + '</span>' +
+          '<span class="pos">' + S.notation(m) + (m.dir === 'H' ? ' →' : ' ↓') + '</span>';
+        row.addEventListener('click', () => showMove(m, row));
+        res.appendChild(row);
+        if (i === 0) showMove(m, row);
+      });
+    }, 30);
+  });
+
+  function showMove(m, rowEl){
+    document.querySelectorAll('.mv.on').forEach((el) => el.classList.remove('on'));
+    rowEl.classList.add('on');
+    preview = m;
+    const all = S.wordsFormed(grid, blanks, m);
+    const extras = all.filter((w) => w !== m.word.toUpperCase());
+    $('mvinfo').textContent = m.word + ' at ' + S.notation(m) +
+      (m.dir === 'H' ? ' across' : ' down') + ' — ' + m.score + ' pts' +
+      (extras.length ? ' (also makes ' + extras.join(', ') + ')' : '');
+    $('apply').style.display = 'inline-block';
+    drawBoard();
+  }
+
+  $('apply').addEventListener('click', () => {
+    if (!preview) return;
+    for (const [r,c,L,isb] of preview.placed) {
+      grid[r][c] = L;
+      if (isb) blanks.add(r + ',' + c);
+    }
+    clearPreview(); persist(); drawBoard();
+    setStatus('Move applied. Enter your opponent\u2019s play the same way.');
+  });
+
+  // ------- board <-> text
+  $('loadtext').addEventListener('click', () => {
+    try {
+      const p = S.parseBoard($('btext').value);
+      grid = p.grid; blanks = p.blanks;
+      clearPreview(); persist(); drawBoard();
+      setStatus('Board loaded from text.');
+    } catch(e){ setStatus(String(e.message || e), true); }
+  });
+  $('copytext').addEventListener('click', () => {
+    $('btext').value = S.boardToText(grid, blanks);
+    try { navigator.clipboard.writeText($('btext').value); } catch(e){}
+    setStatus('Board text copied below (and to the clipboard where allowed).');
+  });
+
+  restore();
+  drawBoard();
+})();
+</script>
+</body>
+</html>
