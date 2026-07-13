@@ -20,6 +20,11 @@ sit next to `index.html`.
 
 ## Using it
 
+- Paste a screenshot straight onto the page (⌘V or the Paste button), drag one
+  in, or use Import screenshot. The reader takes a full-screen, light-mode screenshot of the game and
+  fills in the whole board and rack, including blank tiles (detected from
+  their 0 value). Photos of a screen won't work; use real screenshots. Give
+  the result a quick glance before solving.
 - Tap a board square, type letters on the keypad. The Blank key marks blank
   tiles (they show gold and score 0). Move →/↓ sets which way the cursor
   advances so you can type whole words.

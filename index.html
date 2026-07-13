@@ -116,6 +116,11 @@
   <h1>Crossplay <span class="tile-i">Sidecar</span></h1>
   <div class="status" id="status">Loading word list…</div>
 
+  <div class="btnrow" style="margin:0 0 10px">
+    <button id="shot">Import screenshot</button>
+    <button id="pasteshot">Paste screenshot</button>
+    <input id="shotfile" type="file" accept="image/*" hidden>
+  </div>
   <div class="board" id="board" aria-label="Crossplay board"></div>
 
   <div class="rackrow">
@@ -123,8 +128,8 @@
     <input id="rack" maxlength="7" autocomplete="off" spellcheck="false"
       inputmode="latin" placeholder="MADBUQD">
   </div>
-  <p class="hint">Tap a square to type the board in (Blank key for blank tiles).
-    In the rack, <b>?</b> is a blank.</p>
+  <p class="hint">Paste (⌘V), drop, or import a full-screen screenshot of the game — or tap squares to
+    type the board in (Blank key for blank tiles). In the rack, <b>?</b> is a blank.</p>
 
   <button id="solve" disabled>Find best moves</button>
 
@@ -158,6 +163,8 @@
 </div>
 
 <script src="solver.js"></script>
+<script src="vision.js"></script>
+<script src="templates.js"></script>
 <script>
 (function(){
   const S = window.CrossplaySolver;
@@ -379,6 +386,78 @@
     $('btext').value = S.boardToText(grid, blanks);
     try { navigator.clipboard.writeText($('btext').value); } catch(e){}
     setStatus('Board text copied below (and to the clipboard where allowed).');
+  });
+
+  // ------- screenshot import
+  const V = window.CrossplayVision;
+  let visTemplates = null;
+  try { visTemplates = V.unpackTemplates(window.CROSSPLAY_TEMPLATES); } catch(e){}
+  function loadImage(file){
+    if (window.createImageBitmap) return createImageBitmap(file);
+    return new Promise((res, rej) => {
+      const img = new Image();
+      img.onload = () => res(img); img.onerror = rej;
+      img.src = URL.createObjectURL(file);
+    });
+  }
+  async function importImage(blob){
+    if (!visTemplates) { setStatus('Screenshot reader failed to initialize.', true); return; }
+    setStatus('Reading screenshot\u2026');
+    try {
+      const bmp = await loadImage(blob);
+      const cv = document.createElement('canvas');
+      cv.width = bmp.width; cv.height = bmp.height;
+      const ctx = cv.getContext('2d');
+      ctx.drawImage(bmp, 0, 0);
+      const im = ctx.getImageData(0, 0, cv.width, cv.height);
+      const res = V.parseScreenshot(im.data, im.width, im.height, visTemplates);
+      grid = res.grid; blanks = res.blanks;
+      if (res.rack) $('rack').value = res.rack;
+      clearPreview(); persist(); drawBoard();
+      setStatus(res.warnings.length
+        ? 'Imported with notes \u2014 ' + res.warnings.join('; ') + '. Fix anything odd, then solve.'
+        : 'Screenshot imported \u2014 give it a glance, then solve.');
+    } catch(e) {
+      setStatus('Couldn\u2019t read that screenshot \u2014 use a full-screen, light-mode ' +
+        'screenshot of the game (photos of a screen won\u2019t work). ' + (e.message || e), true);
+    }
+  }
+  $('shot').addEventListener('click', () => $('shotfile').click());
+  $('shotfile').addEventListener('change', (ev) => {
+    const file = ev.target.files[0];
+    ev.target.value = '';
+    if (file) importImage(file);
+  });
+  $('pasteshot').addEventListener('click', async () => {
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.read) throw new Error('unsupported');
+      const items = await navigator.clipboard.read();
+      for (const it of items) {
+        const t = it.types.find((x) => x.startsWith('image/'));
+        if (t) { importImage(await it.getType(t)); return; }
+      }
+      setStatus('No image on the clipboard \u2014 copy a screenshot first.', true);
+    } catch(e) {
+      setStatus('Clipboard not readable here \u2014 press \u2318V instead, drag the ' +
+        'image in, or use Import screenshot.', true);
+    }
+  });
+  document.addEventListener('paste', (e) => {
+    const items = e.clipboardData && e.clipboardData.items;
+    if (!items) return;
+    for (const it of items) {
+      if (it.type && it.type.startsWith('image/')) {
+        e.preventDefault();
+        importImage(it.getAsFile());
+        return;
+      }
+    }
+  });
+  document.addEventListener('dragover', (e) => e.preventDefault());
+  document.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const f = [...(e.dataTransfer.files || [])].find((x) => x.type.startsWith('image/'));
+    if (f) importImage(f);
   });
 
   restore();
